@@ -70,7 +70,7 @@ app.patch("/login", async (req, res) => {
     const { mailAddress, password } = req.body;
 
     //some conditions here
-    if (!mailAddress) throw "giriş yapabilmek için mail adresini de yazmalısın";
+    if (!mailAddress) throw "giriş yapabilmek için mail adresini de vermelisin";
     if (!password) throw "parola nerede ?";
 
     mailAddress.toLocaleLowerCase();
@@ -78,18 +78,9 @@ app.patch("/login", async (req, res) => {
     //kimlik doğrulama
     await database
       .verifyAuthentication(mailAddress)
-      .then(async ({ passwordHashes }) => {
-        var verified;
-        for (var i = 0; i < passwordHashes.length; i++) {
-          if (
-            await verifyAuthentication(
-              password,
-              passwordHashes[i].password_hash
-            )
-          )
-            break;
-          if (i === passwordHashes.length - 1) throw "kimlik doğrulanamadı";
-        }
+      .then(async ({ passwordHash }) => {
+        if (await verifyAuthentication(password, passwordHash)) return;
+        throw "kimlik doğrulanamadı";
       });
 
     //cihaza ait birkaç bilgi
@@ -103,23 +94,16 @@ app.patch("/login", async (req, res) => {
     //log tutma
     database
       .login({ mailAddress, _device, country, city, ip })
-      .then(
-        async ({
-          userName,
-          userId,
-          secret_access_token,
-          secret_refresh_token,
-        }) => {
-          const user = { userName: userName, userId: userId };
-          const accessToken = generateAccessToken(user, secret_access_token);
-          const refresh_token = jwt.sign(user, secret_refresh_token);
+      .then(async ({ user_id, secret_access_token, secret_refresh_token }) => {
+        const user = { user_id: user_id };
+        const accessToken = generateAccessToken(user, secret_access_token);
+        const refresh_token = jwt.sign(user, secret_refresh_token);
 
-          //save refresh token in db
-          await database.keepRefreshtoken(mailAddress, refresh_token);
+        //save refresh token in db
+        await database.keepRefreshtoken(mailAddress, refresh_token);
 
-          res.json({ accessToken: accessToken, refresh_token: refresh_token });
-        }
-      );
+        res.json({ accessToken: accessToken, refresh_token: refresh_token });
+      });
   } catch (error) {
     res.send({ cause: error });
   }
@@ -129,16 +113,12 @@ app.put("/signup", async (req, res) => {
   try {
     //TODO :mail'e doğrulama kodu
 
-    const { password, userName, eMail, phoneNo, nation } = req.body; //TODO daha fazla bilgi
+    const { password, eMail } = req.body; //TODO daha fazla bilgi
 
     //some conditions here
-    if (!countries[nation]) throw "telefon ülke kodu hatalı"; //TODO: ???? status kodu bakılacak
     if (password.length <= 8)
       throw "şifre uzunluğu yeterli değil , en az 9 karakter uzunluğuna olmalı";
-    if (phoneNo.length < 4) throw "bu bir telefon numarası olamaz . Çok kısa !";
     if (eMail.length < 4) throw "dalga mı geçiyorsun ! bu mail ne ?";
-    if (userName.length <= 2)
-      throw "senin adam akıllı bir isimin yok mu !? HE !";
 
     eMail.toLocaleLowerCase();
 
@@ -168,7 +148,6 @@ app.put("/signup", async (req, res) => {
       })
       .catch((error) => res.send({ cause: error }));
   } catch (error) {
-    console.log(error);
     res.send({ cause: error });
   }
 });
@@ -193,9 +172,6 @@ function authenticateToken(req, res, next) {
     res.send(error);
   }
 }
-app.get("/post", authenticateToken, (req, res) => {
-  res.send("selamm");
-});
 
 app.post("/token", (req, res) => {
   //takes refresh token
@@ -203,12 +179,11 @@ app.post("/token", (req, res) => {
   if (refreshToken == null) return res.sendStatus(401);
   database
     .token(userId, refreshToken)
-    .then(({ secret_refresh_token, userName, secret_access_token }) => {
+    .then(({ secret_refresh_token, secret_access_token }) => {
       jwt.verify(refreshToken, secret_refresh_token, (err, user) => {
         if (err) return res.sendStatus(403);
         const accessToken = generateAccessToken(
           {
-            name: userName,
             id: userId,
           },
           secret_access_token
@@ -227,7 +202,7 @@ function generateAccessToken(user, secret_access_token) {
   });
 }
 
-app.delete("/logout", (req, res) => {
+app.delete("/logout", authenticateToken, (req, res) => {
   if (req.body.userId === null || req.body.refreshToken === null)
     return res.sendStatus(401);
   database
@@ -247,34 +222,35 @@ app.post("/business/iwanttoown", authenticateToken, (req, res) => {
   try {
     const {
       name,
-      country,
-      city,
-      district,
-      neighborhood,
-      street,
-      no,
+      eMail,
       phoneNo,
-      mail,
+      nation,
+      workStart,
+      workEnd,
+      capacity,
+      coordinates,
+      workers,
+      occupancy,
     } = req.body;
 
     if (
       !name ||
-      !country ||
-      !city ||
-      !district ||
-      !neighborhood ||
-      !street ||
-      !no ||
       !phoneNo ||
-      !mail ||
-      !nation
+      !eMail ||
+      !nation ||
+      !workStart ||
+      !workEnd ||
+      !capacity ||
+      !coordinates ||
+      !workers ||
+      !occupancy
     ) {
       throw "eksik bilgi";
     }
     if (!countries[nation]) throw "telefon ülke kodu hatalı";
 
     database
-      .iWantToOwn({}, req.user.id)
+      .iWantToOwn(req.body, req.user.id)
       .then(() => res.sendStatus(200))
       .catch((error) => {
         throw error;

@@ -11,7 +11,7 @@ module.exports = class Database {
   verifyAuthentication(mailAddress) {
     return new Promise();
   }
-  login(userData) {
+  login({ mailAddress, _device, country, city, ip }) {
     return new Promise();
   }
   keepRefreshtoken(mailAddress, refresh_token) {

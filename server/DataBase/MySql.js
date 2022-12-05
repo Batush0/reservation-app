@@ -25,12 +25,12 @@ module.exports = class Mysql extends Database {
     return new Promise((resolve, reject) => {
       try {
         this.connection.query(
-          `select password_hash from user where e_mail = '${mailAddress}'`,
+          `select password from user where e_mail = '${mailAddress}'`,
           (error, result) => {
             if (error) throw error;
             if (!result.length)
               return reject("böyle bir kullanıcı olduğuna emin misin ?");
-            resolve({ passwordHashes: result });
+            resolve({ passwordHash: result[0].password });
           }
         );
       } catch (error) {
@@ -45,28 +45,33 @@ module.exports = class Mysql extends Database {
       try {
         //keeping log
 
-        const location = userData.country
-          ? `${userData.country} , ${userData.city}`
-          : "covered location";
+        // `${userData.country} , ${userData.city}`
         this.connection.query(
           `insert into log(
-          user_id,
+          id,
           device,
-          location,
-          ip_address
+          ${userData.country ? "area ," : ""}
+          ip
           ) values(
-            (select user_id from user where e_mail = '${userData.mailAddress}' limit 1),
+            (select id from user where e_mail = '${
+              userData.mailAddress
+            }' limit 1),
             '${userData._device}',
-            '${location}',
+            ${
+              userData.country
+                ? "'" + userData.country + "/" + userData.city + "',"
+                : ""
+            }
             '${userData.ip}'
             );
-            select user_name , user_id ,secret_access_token,secret_refresh_token from user where e_mail = '${userData.mailAddress}'
+            select u.id , t.secret_access_token,t.secret_refresh_token from user u , token t where u.e_mail = '${
+              userData.mailAddress
+            }'
             `,
           (error, result) => {
             if (error) reject(error);
             resolve({
-              userName: result[1][0].user_name,
-              userId: result[1][0].user_id,
+              user_id: result[1][0].user_id,
               secret_access_token: result[1][0].secret_access_token,
               secret_refresh_token: result[1][0].secret_refresh_token,
             });
@@ -80,7 +85,7 @@ module.exports = class Mysql extends Database {
   keepRefreshtoken(mailAddress, refresh_token) {
     return new Promise((resolve, reject) => {
       this.connection.query(
-        `update user set refresh_token = '${refresh_token}' where e_mail = '${mailAddress}'`,
+        `update token set refresh_token = '${refresh_token}' where id = (select id from user where e_mail = '${mailAddress}' limit 1)`,
         (error) => {
           if (error) reject(error);
           resolve();
@@ -104,38 +109,23 @@ module.exports = class Mysql extends Database {
           );
         });
 
-        await new Promise((res) => {
-          this.connection.query(
-            `select * from user where phone_no = ${userData.phoneNo} and nation = ${userData.nation}`,
-            (error, result) => {
-              if (error) throw error;
-              if (result.length)
-                return reject("telefon numarası mevcut. Kullanılamaz !");
-              return res();
-            }
-          );
-        });
-
         this.connection.query(
           `insert into user(
-            user_name, 
-            password_hash,
-            phone_no,
-            nation,
-            e_mail,
-            secret_access_token,
-            secret_refresh_token,
-            refresh_token
+            password,
+            e_mail
             ) values(
-              '${userData.userName}',
               '${userData.passwordHash}',
-              ${userData.phoneNo},
-              ${userData.nation},
-              '${userData.eMail}',
-              '${userData.secret_access_token}',
-              '${userData.secret_refresh_token}',
-              '${userData.refresh_token}'
-            );`,
+              '${userData.eMail}'
+            );
+            insert into token(
+              id,
+              secret_access_token,
+              secret_refresh_token
+              ) values(
+                (select id from user where e_mail = '${userData.eMail}' limit 1),
+                '${userData.secret_access_token}',
+                '${userData.secret_refresh_token}'
+              )`,
           (error, result) => {
             if (error) throw error;
             resolve();
@@ -150,7 +140,7 @@ module.exports = class Mysql extends Database {
     return new Promise((resolve, reject) => {
       try {
         this.connection.query(
-          `select secret_access_token from user where user_id = ${userId}`,
+          `select secret_access_token from token where id = ${userId}`,
           (error, result) => {
             if (error) throw error;
             resolve({ secret_access_token: result[0].secret_access_token });
@@ -166,12 +156,11 @@ module.exports = class Mysql extends Database {
     return new Promise((resolve, reject) => {
       try {
         this.connection.query(
-          `select secret_refresh_token ,secret_access_token, user_name from user where refresh_token = '${refreshToken}'`,
+          `select secret_refresh_token ,secret_access_token from token where refresh_token = '${refreshToken}' and id = ${userId}`,
           (error, result) => {
             if (error) throw error;
             if (!result.length) return reject(401);
             resolve({
-              userName: result[0].user_name,
               secret_refresh_token: result[0].secret_refresh_token,
               secret_access_token: result[0].secret_access_token,
             });
@@ -183,22 +172,11 @@ module.exports = class Mysql extends Database {
     });
   }
   logout(userId, refresh_token) {
-    return new Promise((resolve, reject) => {
-      try {
-        this.connection.query(
-          `select * from user where user_id=${userId} and refresh_token = '${refresh_token}'`,
-          (error, result) => {
-            if (error) throw error;
-            if (!result.length) return reject(403);
-            this.connection.query(
-              `update user set refresh_token = null where user_id = ${userId}`
-            );
-            resolve();
-          }
-        );
-      } catch (error) {
-        reject(error);
-      }
+    return new Promise((resolve) => {
+      this.connection.query(
+        `update token set refresh_token = null where id = ${userId}`
+      );
+      resolve();
     });
   }
 
@@ -209,40 +187,35 @@ module.exports = class Mysql extends Database {
         //zaten işletme tanımlıysa isteği kabul edilemez
         this.connection.query(
           `select if(
-        (select count(*) from business where id = ${userId}) < 1 
-        , (select if(
-          (select count(*) from i_want_to_own where id = ${userId}) < 1 , 1,0)
-          ) ,0)as 'anyRequest';`,
+        (select count(*) from business where id = ${userId}) < 1,0,1 )as 'anyRequest';`,
           (error, result) => {
             if (error) throw error;
-            if (result[0].anyRequest == 0) throw "Istek kabul edilemez";
+            if (result[0].anyRequest == 1) throw "Istek kabul edilemez";
             this.connection.query(
-              `insert into i_want_to_own(
-                id,
+              `insert into business(
                 name,
-                country,
-                city,
-                district,
-                neighborhood,
-                street,
-                no,
                 phone_no,
-                mail,
-                web_site_url,
-                nation
+                e_mail,
+                nation,
+                work_start,
+                work_end,
+                capacity,
+                coordinates,
+                workers,
+                owner,
+                occupancy
           ) values(
-            ${userId},
             '${businessData.name}',
-            '${businessData.country}',
-            '${businessData.city}',
-            '${businessData.district}',
-            '${businessData.neighborhood}',
-            '${businessData.street}',
-            '${businessData.no}',
             '${businessData.phoneNo}',
-            '${businessData.mail}',
-            '${businessData.webSiteUrl ? businessData.webSiteUrl : "null"}',
-            ${businessData.nation}
+            '${businessData.eMail}',
+            ${businessData.nation},
+            ${businessData.workStart},
+            ${businessData.workEnd},
+            ${businessData.capacity},
+            '${businessData.coordinates}',
+            ${businessData.workers},
+            ${userId},
+            ${businessData.occupancy}
           )`,
               (error, insertResult) => {
                 if (error) throw error;
