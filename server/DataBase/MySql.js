@@ -229,4 +229,105 @@ module.exports = class Mysql extends Database {
       }
     });
   }
+  reserve(userId, businessId, start, end, amount) {
+    this.connection.query(`insert into reservation(
+        id,business,start,end,amount
+      ) values(
+        ${userId},${businessId},${start},${end},${amount}
+      );`);
+  }
+
+  cancelReservation(id) {
+    return new Promise((resolve, reject) => {
+      this.connection.query(`delete from reservation where id=${id}`);
+      resolve();
+    });
+  }
+
+  authenticateAdmin(id, secret_access_token) {
+    return new Promise((resolve, reject) => {
+      this.connection.query(
+        `select 
+        if((select count(*) from token where secret_access_token = '${secret_access_token}' limit 1) > 0,
+        (select count(*) from admin where id = ${id} > 0),
+        0)as state`,
+        (error, result) => {
+          if (error) return reject(error);
+          resolve(result[0]);
+        }
+      );
+    });
+  }
+
+  authenticateBusinessUser(id) {
+    return new Promise((resolve, reject) => {
+      this.connection.query(
+        `select business from worker where id = ${id}`,
+        (e, result) => {
+          if (!result.length) return reject("buna yetkin yok");
+          this.connection.query(
+            `select active from business where id=${result[0].business} `,
+            (e, result) => {
+              if ((result[0].active = 0)) return reject("işletme aktif değil");
+              resolve();
+            }
+          );
+        }
+      );
+    });
+  }
+
+  acceptIwantToOwn(id) {
+    this.connection.query(`update business set active = 1 where id=${id}`);
+  }
+
+  denyIWantToOwn(id) {
+    return new Promise(async (resolve, reject) => {
+      await new Promise((res, rej) => {
+        this.connection.query(
+          `select active from business where id = ${id}`,
+          (e, result) => {
+            if (!result.length)
+              return reject(`${id} id ile bağlantılı aktif istek bulunamadı`);
+            if ((result.active = 1))
+              return reject(`Hali hazırda aktif bir işletmeyi silemezsin !`);
+            resolve();
+          }
+        );
+      });
+      this.connection.query(`delete from business where id=${id}`);
+      resolve();
+    });
+  }
+
+  getIWantToOwn(callback) {
+    this.connection.query(
+      "select * from business where active = 0",
+      (e, result) => {
+        callback(result);
+      }
+    );
+  }
+
+  updateUserMail(id, newValue) {
+    return new Promise((resolve, reject) => {
+      this.connection.query(
+        `select * from user where e_mail = '${newValue}'`,
+        (e, result) => {
+          if (result.length) return reject();
+          this.connection.query(
+            `update user set e_mail = '${newValue}' where id=${id}`
+          );
+        }
+      );
+    });
+  }
+  updateUserPassword(id, newValue) {
+    this.connection.query(
+      `update user set password = '${newValue}' where id = ${id}`
+    );
+  }
+  deleteUser(id) {
+    this.connection.query(`delete from user where id = ${id}`);
+  }
 };

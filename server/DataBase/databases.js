@@ -4,4 +4,6 @@ const dbs = {
   mysql: new Mysql(),
 };
 
-module.exports = { dbs };
+const selectedDb = dbs.mysql;
+
+module.exports = selectedDb;

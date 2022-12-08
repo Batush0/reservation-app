@@ -3,7 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "start": "nodemon ./app.js"
+    "start": "nodemon ./app.js",
+    "Admin": "nodemon ./admin.js",
+    "Auth": "nodemon ./authentication.js"
   },
   "dependencies": {
     "argon2": "^0.30.2",

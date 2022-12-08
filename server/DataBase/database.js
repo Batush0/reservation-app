@@ -37,4 +37,28 @@ module.exports = class Database {
   iWantToOwn(businessData, userId) {
     return new Promise();
   }
+
+  reserve(userId, businessId, start, end, amount) {}
+  cancelReservation(id) {
+    return new Promise();
+  }
+
+  authenticateAdmin(id, secret_access_token) {
+    return new Promise();
+  }
+
+  acceptIwantToOwn(id) {}
+  getIWantToOwn(callback) {}
+  denyIWantToOwn(id) {}
+
+  updateUserMail(id, newValue) {
+    return new Promise();
+  }
+  updateUserPassword(id, newValue) {}
+
+  deleteUser(id) {}
+
+  authenticateBusinessUser(id) {
+    return new Promise();
+  }
 };
